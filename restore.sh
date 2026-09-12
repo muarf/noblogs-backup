@@ -302,7 +302,7 @@ elif [ -f "$SCRIPT_DIR/wordpress-export.xml" ]; then
     if command -v wp &>/dev/null; then
         WPQ plugin is-active wordpress-importer >/dev/null 2>&1 || \
             WPQ plugin install wordpress-importer --activate 2>/dev/null || true
-        WPQ import "$SCRIPT_DIR/wordpress-export.xml" --authors=create 2>&1 | tail -5
+        WPQ import "$SCRIPT_DIR/wordpress-export.xml" --authors=create
         ok "Import WXR terminé."
     else
         warn "WP-CLI absent — importez 'wordpress-export.xml' via Outils > Importer > WordPress."
