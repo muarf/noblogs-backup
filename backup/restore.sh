@@ -442,6 +442,80 @@ if [ -d "$SCRIPT_DIR/theme" ]; then
         $MKDIR "$WP/wp-content/themes"
         $CP -r "$THEME_DIR" "$WP/wp-content/themes/$THEME_NAME"
         ok "Thème '$THEME_NAME' copié"
+        # Thème récupéré sans templates PHP (le blog d'origine ne sert pas les .php,
+        # webmaster disparu) → générer un squelette minimal (header/footer/index)
+        # pour que le site rende avec le style.css archivé. Fait AVANT l'activation,
+        # sinon WordPress refuse d'activer un thème sans index.php.
+        if [ ! -f "$WP/wp-content/themes/$THEME_NAME/index.php" ]; then
+            cat > "$WP/wp-content/themes/$THEME_NAME/header.php" << 'HEADERPHP'
+<?php
+/**
+ * En-tête minimal de secours — généré par noblogs-backup restore.sh.
+ */
+?><!DOCTYPE html>
+<html <?php language_attributes(); ?>>
+<head>
+<meta charset="<?php bloginfo( 'charset' ); ?>">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><?php echo esc_html( wp_get_document_title() ); ?></title>
+<link rel="stylesheet" href="<?php echo esc_url( get_stylesheet_uri() ); ?>">
+<?php wp_head(); ?>
+</head>
+<body <?php body_class(); ?>>
+<div id="page" class="hfeed site">
+    <header id="masthead" class="site-header">
+        <h1 class="site-title"><a href="<?php echo esc_url( home_url( '/' ) ); ?>" rel="home"><?php bloginfo( 'name' ); ?></a></h1>
+        <?php $desc = get_bloginfo( 'description', 'display' ); ?>
+        <?php if ( $desc ) : ?><p class="site-description"><?php echo $desc; ?></p><?php endif; ?>
+    </header>
+    <div id="content" class="site-content">
+HEADERPHP
+            cat > "$WP/wp-content/themes/$THEME_NAME/footer.php" << 'FOOTERPHP'
+<?php
+/**
+ * Pied de page minimal de secours — généré par noblogs-backup restore.sh.
+ */
+?>
+    </div><!-- #content -->
+    <footer id="colophon" class="site-footer">
+        <p><?php bloginfo( 'name' ); ?> — <?php esc_html_e( 'archivé avec NoBlogs Backup', 'minimalism' ); ?></p>
+    </footer>
+</div><!-- #page -->
+<?php wp_footer(); ?>
+</body>
+</html>
+FOOTERPHP
+            cat > "$WP/wp-content/themes/$THEME_NAME/index.php" << 'INDEXPHP'
+<?php
+/**
+ * Modèle minimal de secours — généré par noblogs-backup restore.sh.
+ */
+get_header(); ?>
+<main id="main" class="site-main" role="main">
+<?php if ( have_posts() ) : ?>
+    <?php while ( have_posts() ) : the_post(); ?>
+        <article id="post-<?php the_ID(); ?>" <?php post_class(); ?>>
+            <header class="entry-header">
+                <?php if ( is_singular() ) : ?>
+                    <h1 class="entry-title"><?php the_title(); ?></h1>
+                <?php else : ?>
+                    <h2 class="entry-title"><a href="<?php the_permalink(); ?>" rel="bookmark"><?php the_title(); ?></a></h2>
+                <?php endif; ?>
+            </header>
+            <div class="entry-content">
+                <?php the_content(); ?>
+            </div>
+        </article>
+    <?php endwhile; ?>
+    <div class="navigation"><p><?php posts_nav_link(); ?></p></div>
+<?php else : ?>
+    <p><?php esc_html_e( 'Rien à afficher.', 'minimalism' ); ?></p>
+<?php endif; ?>
+</main>
+<?php get_footer(); ?>
+INDEXPHP
+            ok "Squelette de thème généré (header/footer/index — templates PHP indisponibles)"
+        fi
         if have_wp; then
             WPQ theme activate "$THEME_NAME" 2>/dev/null && \
                 ok "Thème '$THEME_NAME' activé" || \
@@ -464,6 +538,50 @@ elif [ -f "$SCRIPT_DIR/wordpress-export.xml" ]; then
             WPQ plugin install wordpress-importer --activate 2>/dev/null || true
         WPQ import "$SCRIPT_DIR/wordpress-export.xml" --authors=create 2>&1 | tail -5
         ok "Import WXR terminé."
+        # Re-pointer la médiathèque vers les fichiers archivés (l'importeur
+        # re-télécharge les pièces jointes → doublons "-1") et nettoyer.
+        if [ -f "$SCRIPT_DIR/media_relink.php" ]; then
+            WPQ eval-file "$SCRIPT_DIR/media_relink.php" 2>&1 | tail -5
+            ok "Médiathèque reliée aux fichiers archivés."
+        fi
+        # L'importeur crée l'auteur en rôle "subscriber" (pas de droit de
+        # publication) → les articles animés seraient importés en "draft".
+        # On republie les posts/pages dont le slug figure dans le WXR.
+        PUB_TMP="$SCRIPT_DIR/.noblogs_publish_$$.php"
+        cat > "$PUB_TMP" << 'PUBPHP'
+<?php
+global $wpdb;
+$wxr = $args[0] ?? null;   // passé par restore.sh
+if (!$wxr || !is_file($wxr)) { echo "wordpress-export.xml introuvable.\n"; exit; }
+$raw = file_get_contents($wxr);
+if (!preg_match_all('#<wp:post_name><!\[CDATA\[([^\]]+)\]\]></wp:post_name>#', $raw, $m)) {
+    echo "Aucun post_name trouvé.\n"; exit;
+}
+$p = $wpdb->prefix . "posts";
+$n = 0;
+foreach (array_unique($m[1]) as $slug_raw) {
+    // Normalise : décodage URL + retrait des soft hyphens (U+00AD) que
+    // WordPress a éliminés de son côté lors de l'import.
+    $slug = rawurldecode($slug_raw);
+    $slug = preg_replace('/\x{00AD}/u', '', $slug);
+    if (!$slug) continue;
+    $res = $wpdb->get_results($wpdb->prepare(
+        "SELECT ID FROM {$p} WHERE post_status='draft' AND (post_name=%s OR post_name LIKE %s)",
+        $slug, $slug . '-%'
+    ));
+    foreach ($res as $r) {
+        $wpdb->update($p, ['post_status' => 'publish'], ['ID' => $r->ID]);
+        $n++;
+    }
+}
+echo "→ Articles republiés : $n\n";
+PUBPHP
+        if WPQ eval-file "$PUB_TMP" "$SCRIPT_DIR/wordpress-export.xml" 2>&1 | tail -3; then
+            ok "Articles republiés (statut importé en draft corrigé)."
+        else
+            warn "Échec republication."
+        fi
+        rm -f "$PUB_TMP"
     else
         warn "WP-CLI absent — importez 'wordpress-export.xml' via Outils > Importer > WordPress."
     fi
