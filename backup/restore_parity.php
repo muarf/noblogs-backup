@@ -126,6 +126,16 @@ if ($tagline) {
     update_option('blogdescription', $tagline);
 }
 
+// -------------------------------------------------------------- BLOGNAME
+$blogname = $fid['title'] ?? '';
+if ($blogname) {
+    $old = get_option('blogname');
+    if ($old !== $blogname) {
+        update_option('blogname', $blogname);
+        echo "→ Titre du site restauré : $blogname\n";
+    }
+}
+
 // -------------------------------------------------------------- SIDEBARS / WIDGETS
 $sidebars_map = [];
 $storage = [];

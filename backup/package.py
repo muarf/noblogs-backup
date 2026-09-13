@@ -121,6 +121,7 @@ def package_backup(
         # 5. Scripts de restauration + README + métadonnées
         shutil.copy(_PACKAGE_DIR / "restore.sh", stage / "restore.sh")
         shutil.copy(_PACKAGE_DIR / "restore_parity.php", stage / "restore_parity.php")
+        shutil.copy(_PACKAGE_DIR / "media_relink.php", stage / "media_relink.php")
         (stage / "restore.sh").chmod(0o755)
         _write_readme(stage, slug, original_url, has_fidelity, has_theme)
 
