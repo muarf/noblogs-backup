@@ -30,8 +30,11 @@ from .package import human_size
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = REPO_ROOT / "docs"
 DEFAULT_OUT = REPO_ROOT / "backups"
+RESTORE_ROOT = DEFAULT_OUT / "restores"
+HUGO_ROOT = DEFAULT_OUT / "hugo"
+HUGO_BIN_DIR = HUGO_ROOT / "bin"
 
-GUIDES = ("GUIDE-MILITANTE.md", "GUIDE-WORDPRESS-COM.md", "GUIDE-LOCAL.md")
+GUIDES = ("GUIDE-MILITANTE.md", "GUIDE-WORDPRESS-COM.md", "GUIDE-LOCAL.md", "GUIDE-HUGO.md")
 
 
 def _utf8_console() -> None:
@@ -60,7 +63,7 @@ def slug_from_input(raw: str) -> str:
     if raw.startswith(("http://", "https://")):
         raw = raw.split("/")[2]
     raw = raw.split("/")[0].split("?")[0]
-    for suffix in (".noblogs.org", ".zvz.fr"):
+    for suffix in (".noblogs.org",):
         if raw.lower().endswith(suffix):
             raw = raw[: -len(suffix)]
     return raw.strip().lower().replace(" ", "")
@@ -163,29 +166,28 @@ def _reuse_media_from_zip(zip_path: Path, out_dir: Path, slug: str) -> None:
 
 
 def _after_save(zip_file: str) -> int:
-    """Menu post-sauvegarde : republication immédiate (ZIP extrait) ou plus tard."""
+    """Menu post-sauvegarde : republication immédiate ou plus tard."""
     if not zip_file or not Path(zip_file).exists():
         print("\n  ✗ Archive introuvable.\n")
         return 1
     print("")
     print("  Sauvegarde terminée !")
     print(f"  Archive : {zip_file}\n")
-    extracted = _extract(Path(zip_file))
-    try:
-        print("  [1]  Republication sur WordPress.com")
-        print("  [2]  Republication locale (identique)")
-        print("  [3]  Plus tard — j'ai mon .zip")
-        print("")
-        choice = _read("  Et maintenant ? [1/2/3] : ") or "3"
-        if choice == "1":
-            show_wpcom(zip_file, extracted)
-        elif choice == "2":
-            show_local(zip_file, extracted)
-        else:
-            print(f"  Votre archive : {zip_file}")
-            print(f"  Plus tard : python -m backup wizard republier {zip_file}")
-    finally:
-        shutil.rmtree(extracted, ignore_errors=True)
+    print("  [1]  Hugo + WordPress local (les deux)")
+    print("  [2]  Republication locale (identique)")
+    print("  [3]  Site Hugo statique (léger, sans WordPress)")
+    print("  [4]  Plus tard — j'ai mon .zip")
+    print("")
+    choice = _read("  Et maintenant ? [1/2/3/4] : ") or "4"
+    if choice == "1":
+        return publish_both(Path(zip_file))
+    elif choice == "2":
+        return publish_local(Path(zip_file))
+    elif choice == "3":
+        return publish_hugo(Path(zip_file))
+    else:
+        print(f"  Votre archive : {zip_file}")
+        print(f"  Plus tard : python -m backup wizard republier {zip_file}")
     return 0
 
 
@@ -280,12 +282,84 @@ def _extract(zip_path: Path) -> str:
     return tmp
 
 
-def show_wpcom(zip_path: str, extracted: str | None = None) -> None:
-    print(_guide("GUIDE-WORDPRESS-COM.md", extracted))
-    if extracted:
-        xml = Path(extracted) / "wordpress-export.xml"
-        if xml.exists():
-            print(f"\n  Fichier à importer sur WordPress.com : {xml}\n")
+def _extract_to(zip_path: Path, dst: Path) -> Path:
+    """Décompresse le ZIP dans un dossier (durable), créé au besoin."""
+    dst.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(dst)
+    return dst
+
+
+def _restore_dir(slug: str) -> Path:
+    """Dossier durable de restauration locale : backups/restores/<slug>."""
+    root = Path(os.getenv("NOBLOGS_RESTORE", str(RESTORE_ROOT)))
+    return root / slug
+
+
+def _nb_port() -> int:
+    try:
+        return int(os.getenv("NOBLOGS_PORT", "8080"))
+    except ValueError:
+        return 8080
+
+
+def _cleanup_old_tmp() -> None:
+    """Supprime les anciens dossiers temporaires du flux local (restes cassés)."""
+    import glob
+    for path in glob.glob(os.path.join(tempfile.gettempdir(), "noblogs-restore.*")):
+        if not path.startswith(os.path.join(tempfile.gettempdir(), "noblogs-restore.")):
+            continue
+        if os.path.exists(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+
+def _with_temp_extract(zip_path: Path, fn) -> None:
+    """Extrait dans un dossier temporaire, exécute fn(extracted), puis nettoie."""
+    extracted = _extract(zip_path)
+    try:
+        fn(extracted)
+    finally:
+        shutil.rmtree(extracted, ignore_errors=True)
+
+
+def publish_local(zip_path: Path) -> int:
+    """Republication locale durable : backups/restores/<slug>, jamais purgé par le wizard."""
+    meta = _zip_metadata(zip_path)
+    slug = meta.get("slug") or zip_path.name.split("-noblogs-backup")[0]
+    restore_dir = _restore_dir(slug)
+    restore_dir.mkdir(parents=True, exist_ok=True)
+
+    if (restore_dir / "wp-load.php").exists():
+        print(f"\n  Un site existe déjà : {restore_dir}")
+        print(f"  Site : http://localhost:{_nb_port()}\n")
+        print("  [R]  Réinitialiser le site & relancer la restauration")
+        print("  [O]  Ouvrir le site tel quel (rien d'autre)")
+        print("  [a]  Annuler")
+        print("")
+        choice = _read("  Votre choix [R/o/a] : ").strip().lower()
+        if choice.startswith("o"):
+            print(f"\n  Site : http://localhost:{_nb_port()}")
+            print(f"  Dossier : {restore_dir}\n")
+            return 0
+        if not choice.startswith("r"):
+            print("  Annulé.")
+            return 0
+        print("\n  Réinitialisation du site…")
+        shutil.rmtree(restore_dir, ignore_errors=True)
+        restore_dir.mkdir(parents=True, exist_ok=True)
+
+    _cleanup_old_tmp()
+    _extract_to(zip_path, restore_dir)
+    if not (restore_dir / "restore.sh").exists():
+        print("\n  ✗ Cette archive ne contient pas restore.sh :")
+        print("    restauration locale impossible avec ce fichier.")
+        print("    Re-sauvegardez le blog pour obtenir une archive complète.\n")
+        shutil.rmtree(restore_dir, ignore_errors=True)
+        return 1
+    show_local(str(zip_path), str(restore_dir))
+    print(f"\n  Site : http://localhost:{_nb_port()}")
+    print(f"  Dossier durable : {restore_dir}\n")
+    return 0
 
 
 def show_local(zip_path: str, extracted: str | None = None) -> None:
@@ -313,27 +387,28 @@ def republish_menu(zip_path: str | None = None) -> int:
     if not p.exists():
         print(f"  ✗ Fichier introuvable : {p}")
         return 1
-    extracted = _extract(p)
-    print(f"  Archive décompressée dans {extracted}\n")
     print("  Comment voulez-vous republier ?\n")
-    print("  [1]  WordPress.com  (créer un site, importer — le plus simple)")
+    print("  [1]  Hugo + WordPress local (les deux)")
     print("  [2]  WordPress local (identique à l'original, via restore.sh)")
-    print("  [3]  Afficher les guides")
+    print("  [3]  Site Hugo statique (léger, rapide, sans WordPress)")
+    print("  [4]  Afficher les guides")
     print("  [q]  Quitter\n")
     choice = _read("  Votre choix : ") or "1"
     if choice == "1":
-        show_wpcom(str(p), extracted)
+        return publish_both(p)
     elif choice == "2":
-        show_local(str(p), extracted)
+        return publish_local(p)
     elif choice == "3":
-        for guide in GUIDES:
-            print(_guide(guide, extracted))
-            print("\n" + "─" * 40 + "\n")
+        return publish_hugo(p)
+    elif choice == "4":
+        def _show_guides(ex: str) -> None:
+            for guide in GUIDES:
+                print(_guide(guide, ex))
+                print("\n" + "─" * 40 + "\n")
+        _with_temp_extract(p, _show_guides)
     else:
         print("  Au revoir.")
-        shutil.rmtree(extracted, ignore_errors=True)
         return 0
-    shutil.rmtree(extracted, ignore_errors=True)
     return 0
 
 
@@ -345,7 +420,8 @@ def show_help() -> None:
 
     python -m backup wizard                 Assistant interactif (recommandé)
     python -m backup wizard sauvegarder S   Sauvegarde complète → backups/S-noblogs-backup.zip
-    python -m backup wizard republier [Z]   Republication WordPress.com ou locale
+    python -m backup wizard republier [Z]   Republication locale & Hugo statique
+    python -m backup wizard store           Stock local des thèmes/plugins réseau
     python -m backup wizard aide            Cette aide
 
   Lanceurs « 1 clic »
@@ -356,9 +432,14 @@ def show_help() -> None:
   Prérequis
     Python 3 (auto-installé par le lanceur au premier usage)
 
-  WordPress.com
-    Créez un site sur wordpress.com, puis importez wordpress-export.xml
-    (guide pas-à-pas inclus dans chaque archive).
+  Stock local (thèmes / plugins du réseau)
+    python -m backup wizard store sync    rsync du mirroir (recommandé, complet)
+    python -m backup wizard store git     thèmes + mu-plugins depuis git.inventati.org
+
+  Site Hugo statique (nouveau)
+    Republication sans WordPress, 100 % hors-ligne : le ZIP embarque le thème
+    Hugo nblogs. Au build, hugo est détecté (binaire / Docker / téléchargement)
+    et le site est servi sur http://localhost:8092 (NOBLOGS_HUGO_PORT).
 
   Version """ + __version__ + "\n")
 
@@ -391,6 +472,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if cmd in ("republier", "restore", "publish"):
         return republish_menu(rest[0] if rest else None)
+    if cmd == "store":
+        from .store import store_main
+        return store_main(rest)
+    if cmd in ("upgrade", "complete"):
+        from .store import upgrade_zip
+        if not rest:
+            print("  ✗ Usage : python -m backup wizard upgrade <archive.zip>")
+            return 1
+        p = _resolve_zip(rest[0])
+        if not p.exists():
+            print(f"  ✗ Fichier introuvable : {p}")
+            return 1
+        r = upgrade_zip(p)
+        print(
+            f"\n  ✓ ZIP complété : thème {r['theme']} ({'complet' if r['theme_complete'] else 'incomplet'}), "
+            f"{len(r['plugins'])} plugins, {len(r['mu_plugins'])} mu-plugins\n"
+        )
+        return 0
     if cmd in ("aide", "help", "-h", "--help"):
         show_help()
         return 0

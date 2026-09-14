@@ -1,0 +1,14 @@
+</main><!-- #main -->
+  </div><!-- #primary -->
+  <aside id="secondary" class="widget-area" role="complementary">
+    {{ partial "sidebar-widgets.html" . }}
+  </aside><!-- #secondary -->
+</div><!-- #content -->
+<footer id="colophon" class="site-footer" role="contentinfo">
+  <div class="site-info">
+    <span class="site-name">{{ .Site.Title }}</span>
+    <span class="sep"> | </span>
+    <a href="{{ "/index.xml" | relURL }}">Flux RSS</a>
+  </div>
+</footer><!-- #colophon -->
+</div><!-- #page -->

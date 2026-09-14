@@ -79,7 +79,7 @@ class TestRewriteMediaUrls(unittest.TestCase):
 
     def test_other_domain_files(self):
         out = rewrite_media_urls(
-            '<img src="https://cdn.zvz.fr/files/x.png">',
+            '<img src="https://cdn.example.org/files/x.png">',
             "monblog",
             "https://monblog.noblogs.org",
         )
@@ -168,6 +168,13 @@ class TestWxr(unittest.TestCase):
         xml = generate_wxr("x", "X", "https://x.noblogs.org", self._posts(), [], language="fr-FR")
         self.assertIn("<wp:base_blog_url>https://x.noblogs.org</wp:base_blog_url>", xml)
 
+    def test_post_status_publish(self):
+        xml = generate_wxr("x", "X", "https://x.noblogs.org", self._posts(), [], language="fr-FR")
+        statuses = re.findall(r"<wp:status><!\[CDATA\[(.*?)\]\]></wp:status>", xml)
+        self.assertTrue(statuses, "les items doivent porter <wp:status>")
+        self.assertTrue(all(s == "publish" for s in statuses), statuses)
+        self.assertNotIn("<wp:post_status>", xml)
+
 
 class TestScrapePagesPagination(unittest.TestCase):
     def test_pagination_loop(self):
@@ -237,6 +244,201 @@ class TestMediaTimestamp(unittest.TestCase):
             mock_dt.now.return_value = __import__("datetime").datetime(2026, 3, 5, 7, 8, 9)
             self.assertEqual(_now_timestamp(), "20260305070809")
         self.assertRegex(_now_timestamp(), r"^\d{14}$")
+
+
+class TestRestorableHelpers(unittest.TestCase):
+    def test_restore_dir_default(self):
+        import importlib
+        import backup.wizard as wz
+        self.assertEqual(wz._restore_dir("monblog"), wz.RESTORE_ROOT / "monblog")
+
+    def test_restore_dir_env_override(self):
+        import os
+        import backup.wizard as wz
+        old = os.environ.get("NOBLOGS_RESTORE")
+        try:
+            os.environ["NOBLOGS_RESTORE"] = "/opt/noblogs-sites"
+            self.assertEqual(str(wz._restore_dir("a")), "/opt/noblogs-sites/a")
+        finally:
+            if old is None:
+                os.environ.pop("NOBLOGS_RESTORE", None)
+            else:
+                os.environ["NOBLOGS_RESTORE"] = old
+
+    def test_extract_to(self):
+        import io
+        import tempfile
+        import zipfile
+        import backup.wizard as wz
+        with tempfile.TemporaryDirectory() as td:
+            zip_path = Path(td) / "x.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("metadata.json", '{"slug": "fixture"}')
+                zf.writestr("wordpress-export.xml", "<rss></rss>")
+            dst = Path(td) / "restores" / "fixture"
+            out = wz._extract_to(zip_path, dst)
+            self.assertEqual(out, dst)
+            self.assertTrue((dst / "metadata.json").exists())
+            self.assertTrue((dst / "wordpress-export.xml").exists())
+            self.assertEqual(json.loads((dst / "metadata.json").read_text())["slug"], "fixture")
+
+    def test_with_temp_extract_cleans_up(self):
+        import tempfile
+        import zipfile
+        import backup.wizard as wz
+        seen: list[Path] = []
+        with tempfile.TemporaryDirectory() as td:
+            zip_path = Path(td) / "x.zip"
+            with zipfile.ZipFile(zip_path, "w") as zf:
+                zf.writestr("metadata.json", "{}")
+            wz._with_temp_extract(zip_path, lambda ex: seen.append(Path(ex)))
+            extracted = seen[0]
+            self.assertTrue(extracted.name.startswith("noblogs-restore."))
+            self.assertFalse(Path(extracted).exists())
+
+
+class TestStore(unittest.TestCase):
+    """Store local (thèmes/plugins/mu-plugins) + embarquement dans le ZIP."""
+
+    def _fake_store(self):
+        """Construit un store factice dans un dossier temporaire."""
+        import tempfile
+        td = Path(tempfile.mkdtemp(prefix="noblogs-store-test."))
+        self.addCleanup(__import__("shutil").rmtree, td, ignore_errors=True)
+        themes = td / "themes" / "fixturetheme"
+        themes.mkdir(parents=True)
+        (themes / "style.css").write_text("/* theme */")
+        (themes / "index.php").write_text("<?php /* template */ ?>")
+        (td / "themes" / "incomplete").mkdir(parents=True)
+        (td / "themes" / "incomplete" / "style.css").write_text("/* only css */")
+        pl = td / "plugins" / "event-organiser"
+        pl.mkdir(parents=True)
+        (pl / "event-organiser.php").write_text("<?php /* plugin */ ?>")
+        mu = td / "mu-plugins"
+        mu.mkdir()
+        (mu / "force-layout-balance.php").write_text("<?php /* mu */ ?>")
+        return td
+
+    def test_has_template_and_resolve(self):
+        import os
+        import backup.store as st
+        td = self._fake_store()
+        old = os.environ.get("NOBLOGS_STORE")
+        try:
+            os.environ["NOBLOGS_STORE"] = str(td)
+            self.assertTrue(st.has_template("fixturetheme"))
+            self.assertFalse(st.has_template("incomplete"))
+            dest = Path(td) / "out"
+            out = st.resolve_theme("fixturetheme", dest)
+            self.assertTrue((dest / "fixturetheme" / "style.css").exists())
+            self.assertTrue((dest / "fixturetheme" / "index.php").exists())
+            self.assertIsNone(st.resolve_theme("inconnu", dest))
+            self.assertEqual(st.plugins_list(), ["event-organiser"])
+            self.assertEqual(st.mu_plugins_list(), ["force-layout-balance.php"])
+        finally:
+            if old is None:
+                os.environ.pop("NOBLOGS_STORE", None)
+            else:
+                os.environ["NOBLOGS_STORE"] = old
+
+    def test_upgrade_zip_adds_store_content(self):
+        import os
+        import tempfile
+        import zipfile
+        import backup.store as st
+        td = self._fake_store()
+        old = os.environ.get("NOBLOGS_STORE")
+        try:
+            os.environ["NOBLOGS_STORE"] = str(td)
+            with tempfile.TemporaryDirectory() as tmp:
+                zip_path = Path(tmp) / "b.zip"
+                with zipfile.ZipFile(zip_path, "w") as zf:
+                    zf.writestr("wordpress-export.xml", "<rss></rss>")
+                    zf.writestr("metadata.json",
+                                json.dumps({"slug": "b", "theme": "fixturetheme"}))
+                res = st.upgrade_zip(zip_path)
+                self.assertTrue(res["theme_complete"])
+                self.assertEqual(res["plugins"], ["event-organiser"])
+                self.assertEqual(res["mu_plugins"], ["force-layout-balance.php"])
+                with zipfile.ZipFile(zip_path) as zf:
+                    names = set(zf.namelist())
+                    self.assertIn("theme/fixturetheme/index.php", names)
+                    self.assertIn("plugins/event-organiser/event-organiser.php", names)
+                    self.assertIn("mu-plugins/force-layout-balance.php", names)
+                    self.assertIn("wordpress-export.xml", names)
+                    meta = json.loads(zf.read("metadata.json"))
+                    self.assertTrue(meta["theme_complete"])
+        finally:
+            if old is None:
+                os.environ.pop("NOBLOGS_STORE", None)
+            else:
+                os.environ["NOBLOGS_STORE"] = old
+
+
+class TestPackageBundles(unittest.TestCase):
+    def test_package_bundles_theme_plugins_mu(self):
+        import io
+        import tempfile
+        import zipfile
+        from backup.package import package_backup
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            exports = td / "backups"
+            wxr = td / "x.xml"
+            wxr.write_text("<rss></rss>")
+            uploads = td / "uploads"
+            uploads.mkdir()
+            theme_dir = td / "fixturetheme"
+            theme_dir.mkdir()
+            (theme_dir / "style.css").write_text("/* */")
+            (theme_dir / "index.php").write_text("<?php ?>")
+            plugins = td / "plugins"
+            p = plugins / "akismet"
+            p.mkdir(parents=True)
+            (p / "akismet.php").write_text("<?php ?>")
+            mu = td / "mu-plugins"
+            mu.mkdir()
+            (mu / "m.php").write_text("<?php ?>")
+
+            zip_path = package_backup(
+                slug="s", exports_dir=exports, wxr_path=wxr, uploads_dir=uploads,
+                original_url="https://s.noblogs.org", theme="fixturetheme",
+                theme_dir=theme_dir, plugins_dir=plugins, mu_plugins_dir=mu,
+            )
+            with zipfile.ZipFile(zip_path) as zf:
+                names = set(zf.namelist())
+                self.assertIn("theme/fixturetheme/index.php", names)
+                self.assertIn("plugins/akismet/akismet.php", names)
+                self.assertIn("mu-plugins/m.php", names)
+                meta = json.loads(zf.read("metadata.json"))
+                self.assertTrue(meta["theme_complete"])
+                self.assertEqual(meta["plugins"], ["akismet"])
+                self.assertEqual(meta["mu_plugins"], ["m.php"])
+
+    def test_theme_without_template_marked_incomplete(self):
+        import tempfile
+        import zipfile
+        from backup.package import package_backup
+
+        with tempfile.TemporaryDirectory() as tmp:
+            td = Path(tmp)
+            exports = td / "backups"
+            wxr = td / "x.xml"
+            wxr.write_text("<rss></rss>")
+            uploads = td / "uploads"
+            uploads.mkdir()
+            theme_dir = td / "broken"
+            theme_dir.mkdir()
+            (theme_dir / "style.css").write_text("/* */")  # pas de template → incomplet
+
+            zip_path = package_backup(
+                slug="s", exports_dir=exports, wxr_path=wxr, uploads_dir=uploads,
+                original_url="https://s.noblogs.org", theme="broken", theme_dir=theme_dir,
+            )
+            with zipfile.ZipFile(zip_path) as zf:
+                meta = json.loads(zf.read("metadata.json"))
+                self.assertFalse(meta["theme_complete"])
 
 
 if __name__ == "__main__":

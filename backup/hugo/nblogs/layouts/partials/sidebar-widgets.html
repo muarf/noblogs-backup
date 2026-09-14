@@ -1,0 +1,50 @@
+{{- $host := (urls.Parse .Site.BaseURL).Hostname }}
+{{- $slug := .Site.Params.slug | default (index (split $host ".") 0) }}
+{{- if templates.Exists (printf "partials/sidebars/%s.html" $slug) }}
+  {{- partial (printf "sidebars/%s.html" $slug) . }}
+{{- else }}
+<aside class="widget widget_search">
+  <form role="search" method="get" class="search-form" action="">
+    <label>
+      <span class="screen-reader-text">Rechercher :</span>
+      <input type="search" class="search-field" placeholder="Rechercher…" value="" name="s">
+    </label>
+    <input type="submit" class="search-submit" value="Rechercher">
+  </form>
+</aside>
+<aside class="widget widget_recent_entries">
+  <h3 class="widget-title">Articles récents</h3>
+  <ul>
+    {{- range first 6 (where .Site.RegularPages "Type" "in" (slice "post" "posts")).ByDate.Reverse }}
+      <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+    {{- end }}
+  </ul>
+</aside>
+{{- with (.Site.GetPage "/categories").Pages }}
+<aside class="widget widget_categories">
+  <h3 class="widget-title">Catégories</h3>
+  <ul>
+    {{- range first 30 . }}
+      <li class="cat-item"><a href="{{ .RelPermalink }}">{{ .LinkTitle }}</a></li>
+    {{- end }}
+  </ul>
+</aside>
+{{- end }}
+{{- with (.Site.GetPage "/tags").Pages }}
+<aside class="widget widget_tag_cloud">
+  <h3 class="widget-title">Étiquettes</h3>
+  <div class="tagcloud">
+    {{- range first 45 . }}
+      <a href="{{ .RelPermalink }}" class="tag-cloud-link">{{ .LinkTitle }}</a>
+    {{- end }}
+  </div>
+</aside>
+{{- end }}
+<aside class="widget widget_meta">
+  <h3 class="widget-title">Méta</h3>
+  <ul>
+    <li><a href="{{ "/index.xml" | relURL }}">Flux RSS</a></li>
+    <li>Site statique</li>
+  </ul>
+</aside>
+{{- end }}

@@ -96,7 +96,7 @@ def rewrite_media_urls(content: str, slug: str, site_url: str) -> str:
     if not content:
         return content
     base = site_url.rstrip("/")
-    domains = rf"(?:{re.escape(slug)}\.(?:noblogs\.org|zvz\.fr)|noblogs\.org)"
+    domains = rf"(?:{re.escape(slug)}\.noblogs\.org|noblogs\.org)"
     content = re.sub(rf"https?://{domains}/files/", f"{base}/wp-content/uploads/", content)
     content = re.sub(r"https?://[^/]+/files/", f"{base}/wp-content/uploads/", content)
     content = re.sub(r"(?<=[\"'=])/?files/", "wp-content/uploads/", content)
@@ -211,7 +211,7 @@ def generate_wxr(
         xml.append(f"    <wp:post_id>{pid}</wp:post_id>")
         xml.append(f"    <wp:post_date><![CDATA[{dt_str}]]></wp:post_date>")
         xml.append(f"    <wp:post_date_gmt><![CDATA[{gmt_str}]]></wp:post_date_gmt>")
-        xml.append("    <wp:post_status><![CDATA[publish]]></wp:post_status>")
+        xml.append("    <wp:status><![CDATA[publish]]></wp:status>")
         xml.append(f"    <wp:post_name><![CDATA[{p_slug}]]></wp:post_name>")
         xml.append("    <wp:post_type><![CDATA[post]]></wp:post_type>")
         for c in p.get("cats", []):
@@ -234,7 +234,7 @@ def generate_wxr(
         xml.append(f"    <wp:post_id>{pid}</wp:post_id>")
         xml.append(f"    <wp:post_date><![CDATA[{pg_dt_str}]]></wp:post_date>")
         xml.append(f"    <wp:post_date_gmt><![CDATA[{pg_gmt_str}]]></wp:post_date_gmt>")
-        xml.append("    <wp:post_status><![CDATA[publish]]></wp:post_status>")
+        xml.append("    <wp:status><![CDATA[publish]]></wp:status>")
         xml.append(f"    <wp:post_name><![CDATA[{pg_slug}]]></wp:post_name>")
         xml.append("    <wp:post_type><![CDATA[page]]></wp:post_type>")
         xml.append("  </item>")

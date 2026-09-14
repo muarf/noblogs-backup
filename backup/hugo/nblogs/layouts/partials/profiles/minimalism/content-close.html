@@ -1,0 +1,42 @@
+</div>
+
+<div id="sidebar">
+	<ul>
+		<li>
+			<form method="get" id="searchform" action="{{ "/" | relURL }}">
+<label class="hidden" for="s">Search for:</label>
+<div><input type="text" value="" name="s" id="s" />
+<input type="submit" id="searchsubmit" value="Search" />
+</div>
+</form>
+		</li>
+		{{- with site.Menus.main }}
+		<li class="pagenav"><h2>Pages</h2><ul>{{ range . }}<li class="page_item"><a href="{{ .URL }}">{{ .Name }}</a></li>{{ end }}</ul></li>
+		{{- end }}
+		{{- $groups := (where .Site.RegularPages "Type" "in" (slice "post" "posts")).GroupByDate "2006-01" }}
+		<li><h2>Archives</h2>
+			<ul>
+				{{ range $groups }}
+				<li><a href='{{ "post/" | relURL }}{{ replace .Key "-" "/" }}/'>{{ printf "%s-01" .Key | time.AsTime | time.Format "January 2006" }}</a></li>
+				{{ end }}
+			</ul>
+		</li>
+		{{- with site.Taxonomies.categories }}
+		<li class="categories"><h2>Categories</h2><ul>
+			{{ range . }}<li class="cat-item"><a href="{{ .Page.RelPermalink }}">{{ .Page.Title }}</a> ({{ .Count }})</li>{{ end }}
+		</ul></li>
+		{{- end }}
+		{{- $sb := printf "sidebars/%s.html" (.Site.Params.slug | default "") }}
+		{{- if templates.Exists (printf "partials/%s" $sb) }}
+		<li><h2>Widgets</h2>{{ partial $sb . }}</li>
+		{{- end }}
+	</ul>
+</div>
+
+<hr />
+<div id="footer">
+	<p>
+		{{ .Site.Title }} powered by <a href="{{ "/index.xml" | relURL }}">Flux RSS</a>
+	</p>
+</div>
+</div>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="{{ .Site.Language.Locale | default "fr" }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} · {{ .Site.Title }}{{ end }}</title>
+  {{ with .Site.Params.description }}<meta name="description" content="{{ . }}">{{ end }}
+  <link rel="canonical" href="{{ .Permalink }}">
+  <link rel="alternate" type="application/rss+xml" title="Flux RSS" href="{{ "/index.xml" | relURL }}">
+  <link rel="stylesheet" href="{{ "/css/wp-blocks.css" | relURL }}">
+  <link rel="stylesheet" href="{{ "/css/wp-classic-themes.css" | relURL }}">
+  {{ if eq .Site.Params.profile "newscard" }}
+    <link rel="stylesheet" href="{{ "/css/profiles/newscard/bootstrap.min.css" | relURL }}">
+    <link rel="stylesheet" href="{{ "/css/profiles/newscard/all.min.css" | relURL }}">
+  {{ end }}
+  {{ with .Site.Params.profile }}
+    <link rel="stylesheet" href="{{ printf "/css/profiles/%s/style.css" . | relURL }}">
+  {{ else }}
+    <link rel="stylesheet" href="{{ "/css/style.css" | relURL }}">
+  {{ end }}
+  {{ if eq .Site.Params.profile "twentyfourteen" }}
+    <link rel="stylesheet" href="{{ "/css/profiles/twentyfourteen/fonts/font-lato.css" | relURL }}">
+  {{ end }}
+  {{ if or (eq .Site.Params.profile "twentyfifteen") (eq .Site.Params.profile "twentyfourteen") }}
+    <link rel="stylesheet" href="{{ printf "/css/profiles/%s/genericons/genericons.css" .Site.Params.profile | relURL }}">
+  {{ end }}
+  {{ range .Site.Params.themeExtras }}
+    <link rel="stylesheet" href="{{ . | relURL }}">
+  {{ end }}
+  {{ with .Site.Params.customCss }}
+    <style>{{ . | safeCSS }}</style>
+  {{ end }}
+</head>

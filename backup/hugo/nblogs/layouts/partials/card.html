@@ -1,0 +1,5 @@
+<article class="post">
+  <h2 class="post-title"><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
+  {{ with .Date }}<time datetime="{{ .Format "2006-01-02" }}">{{ .Format "2 janvier 2006" }}</time>{{ end }}
+  {{ with .Summary }}<p class="post-summary">{{ . }}</p>{{ end }}
+</article>

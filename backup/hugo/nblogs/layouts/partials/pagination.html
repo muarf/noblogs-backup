@@ -1,0 +1,3 @@
+{{- if gt .Paginator.TotalPages 1 }}
+{{ partial (printf "profiles/%s/pagination.html" (partial "profile.html" .)) . }}
+{{- end }}

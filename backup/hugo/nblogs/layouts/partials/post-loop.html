@@ -1,0 +1,38 @@
+{{- $pages := .Pages }}
+{{- if .IsHome }}
+  {{- $pages = (where .Site.RegularPages "Type" "in" (slice "post" "posts")).ByDate.Reverse }}
+  {{- if eq (len $pages) 0 }}
+    {{- $frontPage := or (.Site.GetPage "pages/accueil") (.Site.GetPage "/pages/accueil.md") (.Site.GetPage "accueil") }}
+    {{- if not $frontPage }}
+      {{- range first 1 .Site.RegularPages }}{{ $frontPage = . }}{{ end }}
+    {{- end }}
+    {{- if $frontPage }}
+      <article class="page type-page hentry">
+        <header class="entry-header"><h1 class="entry-title">{{ $frontPage.Title }}</h1></header>
+        <div class="entry-content">{{ $frontPage.Content }}</div>
+      </article>
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- if or (not .IsHome) (gt (len $pages) 0) }}
+  {{- $paginator := .Paginate $pages }}
+  {{- $legacy := in (slice "twentyten" "twentyeleven" "twentytwelve") (.Site.Params.profile | default "") -}}
+  {{- if and $legacy (gt $paginator.TotalPages 1) }}
+  <div id="nav-above" class="navigation">
+    <div class="nav-previous">{{ if $paginator.HasPrev }}<a href="{{ $paginator.Prev.URL }}">← Précédents</a>{{ end }}</div>
+    <div class="nav-next">{{ if $paginator.HasNext }}<a href="{{ $paginator.Next.URL }}">Suivants →</a>{{ end }}</div>
+  </div>
+  {{- end }}
+  {{- if eq .Site.Params.profile "newscard" }}
+  <div class="row gutter-parent-14 post-wrap">
+    {{- range $paginator.Pages }}
+      {{ partial "post-card.html" . }}
+    {{- end }}
+  </div>
+  {{- else }}
+    {{- range $paginator.Pages }}
+      {{ partial "post-card.html" . }}
+    {{- end }}
+  {{- end }}
+  {{ partial "pagination.html" . }}
+{{- end }}

@@ -1,0 +1,20 @@
+<div id="post-{{ with .File }}{{ .ContentBaseName }}{{ end }}" class="post">
+  <h2><a href="{{ .RelPermalink }}" rel="bookmark" title="Permanent Link to {{ .Title }}">{{ .Title }}</a></h2>
+  {{- if in (slice "post" "posts") .Type }}
+  <small>{{ .Date | time.Format ":date_medium" }} by {{ .Params.author | default "admin" }}</small>
+  {{- end }}
+  <div class="entry">
+    {{- if in .RawContent "<!--more-->" }}
+      {{ .Summary }}<br /><a href="{{ .RelPermalink }}">(suite…)</a>
+    {{- else }}
+      {{ .Content }}
+    {{- end }}
+    <div class="clear"></div>
+  </div>
+  {{- if in (slice "post" "posts") .Type }}
+  <p class="postmetadata">
+    {{- with .Params.tags }}Tags: {{ range $i, $t := . }}{{ if $i }}, {{ end }}<a href="{{ "/tags/" | relURL }}{{ $t | urlize }}/" rel="tag">{{ $t }}</a>{{ end }}<br />{{ end }}
+    {{- $cats := .Params.categories }} Posted in {{ range $i, $c := $cats }}{{ if $i }}, {{ end }}<a href="{{ "/categories/" | relURL }}{{ $c | urlize }}/" rel="category tag">{{ $c }}</a>{{ end }} |  <span>Comments Closed</span>
+  </p>
+  {{- end }}
+</div>

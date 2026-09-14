@@ -1,0 +1,22 @@
+<aside class="sidebar">
+  {{ with site.Menus.main }}
+    <nav class="widget widget_menu">
+      <h3>Navigation</h3>
+      <ul>
+        {{ range . }}
+          <li><a href="{{ .URL }}">{{ .Name }}</a></li>
+        {{ end }}
+      </ul>
+    </nav>
+  {{ end }}
+  {{ with (.Site.GetPage "/posts") }}
+    <nav class="widget">
+      <h3>Archives</h3>
+      <ul>
+        {{ range first 8 .Pages.ByDate.Reverse }}
+          <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+        {{ end }}
+      </ul>
+    </nav>
+  {{ end }}
+</aside>

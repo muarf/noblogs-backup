@@ -1,0 +1,35 @@
+{{- $thumb := "" }}
+  {{- with .Params.image }}
+    {{- $thumb = . }}
+  {{- else }}
+    {{- $imgMatch := findRE `<img[^>]+src=["']([^"']+)["']` .Content 1 }}
+    {{- if gt (len $imgMatch) 0 }}
+      {{- $thumb = replaceRE `.*<img[^>]+src=["']([^"']+)["'].*` "$1" (index $imgMatch 0) }}
+    {{- end }}
+  {{- end }}
+  <div class="col-sm-6 col-xxl-4 post-col">
+    <div class="post type-post status-publish format-standard{{ if $thumb }} has-post-thumbnail{{ end }} hentry">
+      {{- if $thumb }}
+      <figure class="post-featured-image post-img-wrap">
+        <a class="post-img" href="{{ .RelPermalink }}" style="background-image: url('{{ $thumb }}');" title="{{ .Title }}"></a>
+        {{- with .Params.categories }}
+        <div class="entry-meta category-meta">
+          <div class="cat-links">
+            {{- range first 2 . }}<a href="{{ "/categories/" | relURL }}{{ . | urlize }}/">{{ . }}</a>{{ end }}
+          </div>
+        </div>
+        {{- end }}
+      </figure>
+      {{- end }}
+      <header class="entry-header">
+        <h2 class="entry-title"><a href="{{ .RelPermalink }}" rel="bookmark">{{ .Title }}</a></h2>
+        <div class="entry-meta">
+          <div class="date"><a href="{{ .RelPermalink }}"><time datetime="{{ .Date.Format "2006-01-02T15:04:05Z07:00" }}">{{ .Date | time.Format ":date_medium" }}</time></a></div>
+          <div class="by-author vcard author">{{ with .Params.author }}{{ . }}{{ else }}admin{{ end }}</div>
+        </div>
+      </header>
+      <div class="entry-content">
+        <p>{{ .Summary | plainify | truncate 130 }}</p>
+      </div>
+    </div>
+  </div>

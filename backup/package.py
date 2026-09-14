@@ -6,6 +6,7 @@ installation WordPress :
 * ``uploads/``              – tous les médias
 * ``theme/<theme>/``        – le thème WordPress actif
 * ``fidelity.json``         – sidebars, menus, CSS, couleurs, header image
+* ``hugo/nblogs/``          – thème Hugo statique (republication sans WordPress)
 * ``restore.sh``            – script de restauration complète
 * ``restore_parity.php``    – logique WP de fidélité (widgets, menus, theme_mods)
 * ``README.md``, ``metadata.json``
@@ -20,6 +21,14 @@ from pathlib import Path
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _DOCS_DIR = _PACKAGE_DIR.parent / "docs"
+
+
+def _theme_has_template(theme_dir: Path) -> bool:
+    """Un thème complet dispose d'un template (index.php / index.html / templates/)."""
+    for name in ("index.php", "index.html"):
+        if (theme_dir / name).is_file():
+            return True
+    return (theme_dir / "templates").is_dir()
 
 
 def human_size(num: int) -> str:
@@ -40,6 +49,8 @@ def _write_readme(stage: Path, slug: str, original_url: str, has_fidelity: bool,
     theme_note = ""
     if has_theme:
         theme_note = """- **`theme/`** — le thème WordPress actif du blog original.
+- **`plugins/`** — les plugins du réseau NoBlogs utilisés par les blogs.
+- **`mu-plugins/`** — les mu-plugins réseau (CSS custom, notes de bas de page…).
 """
     (stage / "README.md").write_text(f"""# Sauvegarde NoBlogs — {slug}
 
@@ -49,6 +60,7 @@ Source : {original_url}
 ## Contenu
 * **`wordpress-export.xml`** — export WXR 1.2 (articles, pages, catégories), compatible WordPress.
 * **`uploads/`** — tous les médias, à placer dans `wp-content/uploads/`.
+* **`hugo/nblogs/`** — thème Hugo statique vendoré (republication sans WordPress, voir `GUIDE-HUGO.md`).
 {fidelity_note}{theme_note}* **`restore.sh`** — restauration complète en une commande (WP-CLI).
 * **`metadata.json`** — informations sur la sauvegarde.
 
@@ -86,6 +98,8 @@ def package_backup(
     media_stats: dict | None = None,
     fidelity: dict | None = None,
     theme_dir: Path | None = None,
+    plugins_dir: Path | None = None,
+    mu_plugins_dir: Path | None = None,
 ) -> Path:
     """Crée l'archive ZIP finale et retourne son chemin."""
     media_stats = media_stats or {}
@@ -101,11 +115,29 @@ def package_backup(
         if uploads_dir.exists() and any(uploads_dir.iterdir()):
             shutil.copytree(uploads_dir, stage / "uploads", dirs_exist_ok=True)
 
-        # 3. Thème
+        # 3. Thème + plugins + mu-plugins (le ZIP est auto-contenu)
         has_theme = False
+        theme_complete = False
         if theme_dir is not None and theme_dir.exists() and any(theme_dir.iterdir()):
             shutil.copytree(theme_dir, stage / "theme" / theme_dir.name, dirs_exist_ok=True)
             has_theme = True
+            theme_complete = _theme_has_template(theme_dir)
+
+        plugins: list[str] = []
+        if plugins_dir is not None and plugins_dir.is_dir():
+            for entry in sorted(plugins_dir.iterdir()):
+                if entry.is_dir() and any(entry.iterdir()):
+                    shutil.copytree(entry, stage / "plugins" / entry.name, dirs_exist_ok=True)
+                    plugins.append(entry.name)
+
+        mu_plugins: list[str] = []
+        if mu_plugins_dir is not None and mu_plugins_dir.is_dir():
+            mu_stage = stage / "mu-plugins"
+            mu_stage.mkdir(parents=True, exist_ok=True)
+            for entry in sorted(mu_plugins_dir.iterdir()):
+                if entry.is_file():
+                    shutil.copy(entry, mu_stage / entry.name)
+                    mu_plugins.append(entry.name)
 
         # 4. Fidélité : JSON + scripts + médias fidélité
         has_fidelity = bool(fidelity)
@@ -122,12 +154,21 @@ def package_backup(
         shutil.copy(_PACKAGE_DIR / "restore.sh", stage / "restore.sh")
         shutil.copy(_PACKAGE_DIR / "restore_parity.php", stage / "restore_parity.php")
         (stage / "restore.sh").chmod(0o755)
+
+        # 6. Thème Hugo statique vendoré (dépôt + build local, sans WordPress)
+        hugo_theme = _PACKAGE_DIR / "hugo" / "nblogs"
+        has_hugo_theme = False
+        if hugo_theme.is_dir() and any(hugo_theme.rglob("*.html")):
+            shutil.copytree(hugo_theme, stage / "hugo" / "nblogs", dirs_exist_ok=True)
+            has_hugo_theme = True
+
         _write_readme(stage, slug, original_url, has_fidelity, has_theme)
 
         for guide in (
             "GUIDE-MILITANTE.md",
             "GUIDE-WORDPRESS-COM.md",
             "GUIDE-LOCAL.md",
+            "GUIDE-HUGO.md",
         ):
             src = _DOCS_DIR / guide
             if src.exists():
@@ -148,6 +189,10 @@ def package_backup(
                     "media_success": media_success,
                     "fidelity": bool(fidelity),
                     "theme_bundled": has_theme,
+                    "theme_complete": theme_complete,
+                    "plugins": plugins,
+                    "mu_plugins": mu_plugins,
+                    "hugo_theme": has_hugo_theme,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -155,7 +200,7 @@ def package_backup(
             encoding="utf-8",
         )
 
-        # 6. Compression ZIP
+        # 7. Compression ZIP
         if zip_file.exists():
             zip_file.unlink()
         with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:

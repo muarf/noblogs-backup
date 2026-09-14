@@ -25,6 +25,9 @@ L'assistant :
 > il propose **« Auto-installer WordPress avec Docker »** : une base MariaDB, WP-CLI
 > et un serveur web sont lancés dans des conteneurs, WordPress est installé puis
 > restauré. Vous retrouvez ensuite votre blog sur `http://localhost:8080`.
+>
+> Le site restauré vit dans `backups/restores/<slug>` et survive à la fermeture
+> de l'assistant : rejouez `republier` pour le réinitialiser ou le relire.
 
 ### Installer WordPress + WP-CLI rapidement (Ubuntu)
 
@@ -66,6 +69,31 @@ Puis `./restore.sh` avec `WP=/chemin/vers/wordpress`.
 
 ---
 
+## Stock local (thèmes & plugins du réseau)
+
+Chaque archive est **auto-contenue** : elle embarque le thème actif du blog
+(depuis le store), les plugins du réseau et les mu-plugins. Aucun accès réseau
+n'est nécessaire au moment du backup ni de la restauration.
+
+Le store est un cache local qui matérialise l'intégralité des thèmes, plugins
+et mu-plugins du réseau NoBlogs :
+
+```bash
+python -m backup wizard store sync   # rsync depuis le mirroir (recommandé, complet)
+python -m backup wizard store git    # thèmes + mu-plugins depuis git.inventati.org
+python -m backup wizard store        # état du store
+```
+
+> **Vieille archive incomplète ?** Un thème réduit à `style.css` provoque une
+> page blanche (HTTP 200 vide) à l'affichage. Complétez l'archive depuis le store
+> sans re-scraper le blog :
+> ```bash
+> python -m backup upgrade backups/monblog-noblogs-backup.zip
+> ```
+> Puis relancez la republication locale.
+
+---
+
 ## Local sur votre ordinateur (macOS / Ubuntu)
 
 **Local WP** (https://localwp.com) — application gratuite, installe WordPress en un clic :
@@ -83,3 +111,4 @@ Puis `./restore.sh` avec `WP=/chemin/vers/wordpress`.
 - Vérifiez quelques articles et images
 - Consultez `metadata.json` pour le nombre d'articles/médias attendus
 - Si le thème est incomplet, vérifiez le nom dans `metadata.json` → `theme`
+  et complétez l'archive avec `python -m backup upgrade <archive.zip>`

@@ -1,0 +1,15 @@
+{{- $legacy := in (slice "twentyten" "twentyeleven" "twentytwelve") (.Site.Params.profile | default "") -}}
+{{- if gt .Paginator.TotalPages 1 }}
+<nav id="nav-below" class="navigation{{ if not $legacy }} pagination{{ end }}" role="navigation">
+  <h2 class="screen-reader-text">Navigation des articles</h2>
+  {{- if $legacy }}
+  <div class="nav-previous">{{ if .Paginator.HasPrev }}<a href="{{ .Paginator.Prev.URL }}">← Précédents</a>{{ end }}</div>
+  <div class="nav-next">{{ if .Paginator.HasNext }}<a href="{{ .Paginator.Next.URL }}">Suivants →</a>{{ end }}</div>
+  {{- else }}
+  <div class="nav-links">
+    {{- range .Paginator.Pagers }}<a class="page-numbers{{ if eq .PageNumber $.Paginator.PageNumber }} current{{ end }}" href="{{ .URL }}">{{ .PageNumber }}</a>{{ end }}
+    {{- if .Paginator.HasNext }}<a class="next page-numbers" href="{{ .Paginator.Next.URL }}">Suivant →</a>{{ end }}
+  </div>
+  {{- end }}
+</nav>
+{{- end }}

@@ -77,13 +77,13 @@ def _resolve_url(url: str, base: str) -> str:
 
 def _abs_urls(text: str, slug: str) -> str:
     text = re.sub(
-        rf"https?://{re.escape(slug)}\.(?:noblogs\.org|zvz\.fr)/(?:files|wp-content/uploads)/",
+        rf"https?://{re.escape(slug)}\.noblogs\.org/(?:files|wp-content/uploads)/",
         "uploads/", text,
     )
     text = re.sub(r"https?://[^/]+/(?:files|wp-content/uploads)/", "uploads/", text)
     text = re.sub(r"/(?:files|wp-content/uploads)/", "uploads/", text)
     text = re.sub(
-        rf"https?://{re.escape(slug)}\.(?:noblogs\.org|zvz\.fr)/",
+        rf"https?://{re.escape(slug)}\.noblogs\.org/",
         "/", text,
     )
     return text

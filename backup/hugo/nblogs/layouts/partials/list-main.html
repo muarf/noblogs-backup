@@ -1,0 +1,15 @@
+{{ define "main" }}
+  <main class="content">
+    <h1 class="list-title">{{ .Title }}</h1>
+    {{ range .Paginator.Pages }}
+      {{ partial "card.html" . }}
+    {{ end }}
+    {{ if gt .Paginator.TotalPages 1 }}
+      <nav class="pagination">
+        {{ if .Paginator.HasPrev }}<a rel="prev" href="{{ .Paginator.Prev.URL }}">← Précédents</a>{{ end }}
+        <span>{{ .Paginator.PageNumber }} / {{ .Paginator.TotalPages }}</span>
+        {{ if .Paginator.HasNext }}<a rel="next" href="{{ .Paginator.Next.URL }}">Suivants →</a>{{ end }}
+      </nav>
+    {{ end }}
+  </main>
+{{ end }}

@@ -1,0 +1,5 @@
+name = "nblogs"
+license = "MIT"
+description = "Base theme for NBlogs static hosting (profiles: twentyten/micro/etc.)"
+author = "nblogs"
+min_version = "0.120.0"

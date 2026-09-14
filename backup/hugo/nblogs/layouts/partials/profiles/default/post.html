@@ -1,0 +1,35 @@
+{{- $cls := "post" }}{{ if eq .Site.Params.profile "micro" }}{{ $cls = "entry" }}{{ end }}
+  <article id="post-{{ with .File }}{{ .ContentBaseName }}{{ end }}" class="{{ $cls }} type-post status-publish format-standard hentry">
+    <header class="entry-header">
+      <h2 class="entry-title"><a href="{{ .RelPermalink }}" rel="bookmark">{{ .Title }}</a></h2>
+      {{- if in (slice "post" "posts") .Type }}
+      <div class="entry-meta">
+        <span class="posted-on"><span class="screen-reader-text">Publié le </span>
+          <a href="{{ .RelPermalink }}" rel="bookmark">
+            <time class="entry-date published" datetime="{{ .Date.Format "2006-01-02T15:04:05Z07:00" }}">{{ .Date | time.Format ":date_medium" }}</time>
+          </a>
+        </span>
+        {{- with .Params.author }}<span class="byline"><span class="author vcard"><span class="screen-reader-text">par </span><span class="fn">{{ . }}</span></span></span>{{ end }}
+      </div>
+      {{- end }}
+    </header>
+    <div class="entry-content">
+      {{- if in .RawContent "<!--more-->" }}
+        {{ .Summary }}
+        <p><a class="more-link" href="{{ .RelPermalink }}">Continuer la lecture de <span class="screen-reader-text">«{{ .Title }}»</span></a></p>
+      {{- else }}
+        {{ .Content }}
+      {{- end }}
+    </div>
+    <footer class="entry-footer">
+      {{- with .Params.categories }}
+      <span class="cat-links"><span class="screen-reader-text">Catégories </span>
+        {{- range $i, $c := . }}{{ if $i }}, {{ end }}<a href="{{ "/categories/" | relURL }}{{ $c | urlize }}/">{{ $c }}</a>{{ end }}</span>
+      {{- end }}
+      {{- if and .Params.categories .Params.tags }}<span class="sep">|</span>{{ end }}
+      {{- with .Params.tags }}
+      <span class="tags-links"><span class="screen-reader-text">Étiquettes </span>
+        {{- range $i, $t := . }}{{ if $i }}, {{ end }}<a href="{{ "/tags/" | relURL }}{{ $t | urlize }}/">{{ $t }}</a>{{ end }}</span>
+      {{- end }}
+    </footer>
+  </article>

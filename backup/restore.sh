@@ -26,7 +26,7 @@ info() { echo -e "  ${C}[i]${N} $*"; }
 
 # --- Chargement métadonnées (sans dépendance à python3) ---
 BACKUP_TITLE="" ; BACKUP_SLUG="" ; BACKUP_THEME="" ; BACKUP_POSTS=0 ; BACKUP_PAGES=0
-BACKUP_MEDIA=0 ; BACKUP_FIDELITY="" ; BACKUP_ORIGINAL_URL=""
+BACKUP_MEDIA=0 ; BACKUP_FIDELITY="" ; BACKUP_ORIGINAL_URL="" ; BACKUP_TAGLINE=""
 META_JSON="$SCRIPT_DIR/metadata.json"
 
 meta() { # $1 = clé JSON
@@ -36,7 +36,7 @@ meta() { # $1 = clé JSON
 if [ -f "$META_JSON" ]; then
   if command -v python3 >/dev/null 2>&1; then
     META="$META_JSON" python3 - > /tmp/_noblogs_meta.$$ << 'META_PY'
-import json, os
+import json, os, shlex
 d = json.load(open(os.environ["META"], encoding="utf-8"))
 for k, v in {
  "BACKUP_SLUG": str(d.get("slug", "")),
@@ -47,8 +47,9 @@ for k, v in {
  "BACKUP_MEDIA": str(d.get("media_success", 0)),
  "BACKUP_FIDELITY": "oui" if d.get("fidelity") else "",
  "BACKUP_ORIGINAL_URL": str(d.get("original_url", "")),
+ "BACKUP_TAGLINE": str(d.get("tagline") or ""),
 }.items():
-    print(f"{k}='{v}'")
+    print(f"{k}={shlex.quote(v)}")
 META_PY
     source /tmp/_noblogs_meta.$$ 2>/dev/null || true
     rm -f /tmp/_noblogs_meta.$$
@@ -61,6 +62,7 @@ META_PY
     BACKUP_MEDIA=$(meta media_success)
     BACKUP_FIDELITY=$(meta fidelity)
     BACKUP_ORIGINAL_URL=$(meta original_url)
+    BACKUP_TAGLINE=$(meta tagline)
   fi
 fi
 [ -z "$BACKUP_SLUG" ] && BACKUP_SLUG=$(basename "$SCRIPT_DIR" | sed 's/-noblogs-backup$//')
@@ -229,7 +231,7 @@ auto_install_docker() {
         [ -n "$NB_ADMIN_PASS" ] || NB_ADMIN_PASS="noblogs2026"
         docker exec "$NB_CLI" php -d memory_limit=512M /usr/local/bin/wp core install \
             --path=/var/www/html --url="http://localhost:$NB_PORT" \
-            --title="$(printf '%s\n' "$BACKUP_TITLE — restauration NoBlogs")" \
+            --title="$(printf '%s\n' "${BACKUP_TITLE:-Restauration NoBlogs}")" \
             --admin_user="$NB_ADMIN_USER" --admin_password="$NB_ADMIN_PASS" \
             --admin_email="admin@example.org" --skip-email --allow-root >/dev/null 2>&1 && \
             echo "  Admin WordPress : $NB_ADMIN_USER / $NB_ADMIN_PASS"
@@ -433,8 +435,8 @@ else
     warn "Aucun média à copier."
 fi
 
-# ========================== 2. THEME ========================================
-echo -e "${C}2/7  Thème${N}"
+# ========================== 2. THEME + PLUGINS + MU-PLUGINS ================
+echo -e "${C}2/7  Thème, plugins & mu-plugins${N}"
 if [ -d "$SCRIPT_DIR/theme" ]; then
     THEME_DIR=$(ls -d "$SCRIPT_DIR/theme"/*/ 2>/dev/null | head -1 || true)
     if [ -n "$THEME_DIR" ]; then
@@ -442,10 +444,23 @@ if [ -d "$SCRIPT_DIR/theme" ]; then
         $MKDIR "$WP/wp-content/themes"
         $CP -r "$THEME_DIR" "$WP/wp-content/themes/$THEME_NAME"
         ok "Thème '$THEME_NAME' copié"
-        if have_wp; then
-            WPQ theme activate "$THEME_NAME" 2>/dev/null && \
-                ok "Thème '$THEME_NAME' activé" || \
-                warn "Activation échouée — activez-le manuellement."
+        # Garde-boue : un thème sans template (index.php/index.html) → page
+        # blanche 200 à l'affichage. Ne pas l'activer, sinon site inutilisable.
+        THEME_HAS_TEMPLATE=0
+        if [ -f "$WP/wp-content/themes/$THEME_NAME/index.php" ] || \
+           [ -f "$WP/wp-content/themes/$THEME_NAME/index.html" ] || \
+           [ -d "$WP/wp-content/themes/$THEME_NAME/templates" ]; then
+            THEME_HAS_TEMPLATE=1
+        fi
+        if [ "$THEME_HAS_TEMPLATE" = "1" ]; then
+            if have_wp; then
+                WPQ theme activate "$THEME_NAME" 2>/dev/null && \
+                    ok "Thème '$THEME_NAME' activé" || \
+                    warn "Activation échouée — activez-le manuellement."
+            fi
+        else
+            warn "Thème '$THEME_NAME' incomplet (aucun template) — non activé par sécurité."
+            warn "Le thème par défaut reste actif pour éviter une page blanche."
         fi
     else
         warn "Aucun dossier thème trouvé."
@@ -454,16 +469,50 @@ else
     warn "Dossier theme/ absent — le thème par défaut restera actif."
 fi
 
+if [ -d "$SCRIPT_DIR/plugins" ] && [ "$(ls -A "$SCRIPT_DIR/plugins" 2>/dev/null)" ]; then
+    $MKDIR "$WP/wp-content/plugins"
+    for PLUGIN_DIR in "$SCRIPT_DIR"/plugins/*/; do
+        [ -d "$PLUGIN_DIR" ] || continue
+        PLUGIN_NAME=$(basename "$PLUGIN_DIR")
+        $CP -rn "$PLUGIN_DIR" "$WP/wp-content/plugins/$PLUGIN_NAME"
+        if have_wp; then
+            WPQ plugin activate "$PLUGIN_NAME" 2>/dev/null && \
+                ok "Plugin '$PLUGIN_NAME' activé" || \
+                warn "Plugin '$PLUGIN_NAME' non activé (importez-le manuellement)."
+        fi
+    done
+fi
+
+if [ -d "$SCRIPT_DIR/mu-plugins" ] && [ "$(ls -A "$SCRIPT_DIR/mu-plugins" 2>/dev/null)" ]; then
+    $MKDIR "$WP/wp-content/mu-plugins"
+    # Petits fichiers réseau (CSS custom, notes de bas de page…) : on les copie
+    # tels quels (sans -n) pour que la version du ZIP l'emporte toujours.
+    for MU_FILE in "$SCRIPT_DIR"/mu-plugins/*; do
+        [ -f "$MU_FILE" ] && $CP "$MU_FILE" "$WP/wp-content/mu-plugins/"
+    done
+    ok "Mu-plugins réseau copiés."
+fi
+
 # ========================== 3. IMPORT WXR ===================================
 echo -e "${C}3/7  Import WXR (articles + pages)${N}"
 if [ "$SKIP_WXR" = "1" ]; then
     info "Import WXR ignoré (SKIP_WXR=1)."
 elif [ -f "$SCRIPT_DIR/wordpress-export.xml" ]; then
     if have_wp; then
+        # Priorité au wordpress-importer embarqué dans le ZIP (hors-ligne) ;
+        # le téléchargement WP.org n'est qu'un dernier recours.
         WPQ plugin is-active wordpress-importer >/dev/null 2>&1 || \
+            WPQ plugin activate wordpress-importer >/dev/null 2>&1 || \
             WPQ plugin install wordpress-importer --activate 2>/dev/null || true
         WPQ import "$SCRIPT_DIR/wordpress-export.xml" --authors=create 2>&1 | tail -5
         ok "Import WXR terminé."
+        # Les articles importés en brouillon (script d'export ancien) doivent être publiés.
+        DRAFT_IDS=$(WPQ post list --post_type=post,page --post_status=draft --format=ids 2>/dev/null || true)
+        if [ -n "${DRAFT_IDS:-}" ]; then
+            # shellcheck disable=SC2086
+            WPQ post update $DRAFT_IDS --post_status=publish >/dev/null 2>&1 || true
+            ok "Publications importées ($(echo "$DRAFT_IDS" | wc -w | tr -d ' ') contenus)."
+        fi
     else
         warn "WP-CLI absent — importez 'wordpress-export.xml' via Outils > Importer > WordPress."
     fi
@@ -521,6 +570,22 @@ fi
 # ========================== 7. FINAL CLEANUP ================================
 echo -e "${C}7/7  Nettoyage final${N}"
 if have_wp; then
+    # Titre du blog : garantir le titre original du backup, même si WordPress
+    # était déjà installé (base réutilisée) ou si le titre contient des
+    # caractères spéciaux (apostrophes…) qui cassaient l'ancien parsing.
+    if [ -n "$BACKUP_TITLE" ]; then
+        WPQ option update blogname "$BACKUP_TITLE" 2>/dev/null && \
+            ok "Titre du blog : $BACKUP_TITLE" || \
+            warn "Impossible de mettre à jour le titre du blog."
+    fi
+    # Tagline (slogan) : en garde-boue si restore_parity n'a pas pu la poser.
+    if [ -z "${BACKUP_TAGLINE:-}" ] && [ -f "$SCRIPT_DIR/fidelity.json" ]; then
+        BACKUP_TAGLINE=$(sed -n 's/.*"tagline"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SCRIPT_DIR/fidelity.json" 2>/dev/null | head -1)
+    fi
+    if [ -n "${BACKUP_TAGLINE:-}" ]; then
+        WPQ option update blogdescription "$BACKUP_TAGLINE" 2>/dev/null || true
+        ok "Slogan du blog : $BACKUP_TAGLINE"
+    fi
     WPQ rewrite flush 2>/dev/null
     WPQ cache flush 2>/dev/null
     # Supprimer uniquement le contenu par défaut WordPress ("Hello world!"),

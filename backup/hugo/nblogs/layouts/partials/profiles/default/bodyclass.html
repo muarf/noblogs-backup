@@ -1,0 +1,1 @@
+{{- if .IsHome }}home blog{{ else if .IsPage }}single single-post{{ else }}archive{{ end }} wp-theme-{{ .Site.Params.profile | default "default" }} hfeed{{ if eq .Site.Params.profile "twentyseventeen" }} has-sidebar colors-light{{ end }}

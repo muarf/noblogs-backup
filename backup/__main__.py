@@ -17,7 +17,6 @@ from .fidelity import extract_fidelity
 from .media import download_media
 from .package import human_size, package_backup
 from .scraper import NoblogsScraper, ScrapedBlog
-from .theme_download import download_theme
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -129,17 +128,26 @@ def backup_one(slug: str, args: argparse.Namespace) -> dict:
     if fidelity.get("error"):
         print(f"  Fidélité partielle : {fidelity['error']}", flush=True)
 
-    # --- Téléchargement du thème
-    print("Téléchargement du thème…", flush=True)
+    # --- Thème : store local (hors-ligne, complet) puis fallback site
+    print("Constitution du thème (store local)…", flush=True)
     theme_dir = None
     theme_slug = fidelity.get("theme") or scraped.theme
     if theme_slug:
-        theme_dir = download_theme(
-            theme_slug,
-            scraped.base_url,
-            stage_dir / "theme",
-            use_wayback=not args.no_wayback,
-        )
+        from .store import mu_plugins_root, plugins_root, resolve_theme, store_dir
+        theme_dir = resolve_theme(theme_slug, stage_dir / "theme")
+        if theme_dir is None:
+            from .theme_download import download_theme_from_site
+            theme_dir = download_theme_from_site(
+                theme_slug,
+                scraped.base_url,
+                stage_dir / "theme",
+                use_wayback=not args.no_wayback,
+            )
+
+    plugins_src = plugins_root() if plugins_root().is_dir() else None
+    mu_src = mu_plugins_root() if mu_plugins_root().is_dir() else None
+    if theme_dir is not None and not store_dir().is_dir():
+        print("  [store] absent — lancez `python -m backup wizard store sync`", flush=True)
 
     # --- ZIP
     zip_file = package_backup(
@@ -155,6 +163,8 @@ def backup_one(slug: str, args: argparse.Namespace) -> dict:
         media_stats=media_stats,
         fidelity=fidelity,
         theme_dir=theme_dir,
+        plugins_dir=plugins_src,
+        mu_plugins_dir=mu_src,
     )
     size = human_size(zip_file.stat().st_size)
 
@@ -173,9 +183,11 @@ def backup_one(slug: str, args: argparse.Namespace) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args_list = list(argv) if argv is not None else sys.argv[1:]
-    if args_list and args_list[0] == "wizard":
+    if args_list and args_list[0] in ("wizard", "store", "upgrade"):
         from . import wizard
-        return wizard.main(args_list[1:])
+        if args_list[0] == "wizard":
+            return wizard.main(args_list[1:])
+        return wizard.main(args_list)
 
     args = parse_args(args_list)
     if not args.slugs:

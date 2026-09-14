@@ -1,0 +1,10 @@
+{{ partial "head.html" . }}
+{{- $p := partial "profile.html" . }}
+<body class="{{ partial (printf "profiles/%s/bodyclass.html" $p) . }}">
+{{- partial (printf "profiles/%s/site-open.html" $p) . }}
+{{- partial (printf "profiles/%s/header.html" $p) . }}
+{{- partial (printf "profiles/%s/content-open.html" $p) . }}
+{{- block "main" . }}{{ end }}
+{{- partial (printf "profiles/%s/content-close.html" $p) . }}
+</body>
+</html>
