@@ -464,8 +464,8 @@ def _sidebar_partial(slug: str, sidebars: dict) -> str | None:
                     "{{- end }}{{ end }}")
             body = "<ul class='widget-list'>\n" + body + "\n</ul>"
         elif wtype == "archives":
-            body = ("{{- range first 12 ($.Site.RegularPages.GroupByDate \"2006-01\") }}{{ with .Pages }}"
-                    "<li><a href='{{ range first 1 . }}{{ .RelPermalink }}{{ end }}'>{{ .Key }}</a></li>\n"
+            body = ("{{- range first 12 ($.Site.RegularPages.GroupByDate \"2006-01\") }}{{ $key := .Key }}{{ with .Pages }}"
+                    "<li><a href='{{ range first 1 . }}{{ .RelPermalink }}{{ end }}'>{{ $key }}</a></li>\n"
                     "{{- end }}{{ end }}")
             body = "<ul class='widget-list'>\n" + body + "\n</ul>"
         elif wtype == "media_video":

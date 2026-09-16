@@ -197,6 +197,13 @@ class TestConfigAndMenu(unittest.TestCase):
         self.assertIsNone(h._sidebar_partial("monblog", {}))
         self.assertIsNone(h._sidebar_partial("monblog", None))
 
+    def test_archives_widget_keeps_key_outside_with_pages(self):
+        """Le widget Archives ne doit pas lire .Key après {{ with .Pages }} (crash hugo)."""
+        sb = h._sidebar_partial("monblog", {"sidebar-1": [{"type": "archives", "title": "Archives"}]})
+        self.assertIn("$key := .Key", sb)
+        self.assertIn("{{ $key }}", sb)
+        self.assertNotIn("<li><a href='{{ range first 1 . }}{{ .RelPermalink }}{{ end }}'>{{ .Key }}", sb)
+
 
 class TestBuildSite(unittest.TestCase):
     def _build(self):

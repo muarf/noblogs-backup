@@ -21,6 +21,52 @@ warn() { echo -e "  ${Y}!${N} $*"; }
 err()  { echo -e "  ${R}✗${N} $*" >&2; }
 info() { echo -e "  ${C}→${N} $*"; }
 
+# --- Langue ---
+USER_LANG="${LANG:-}"
+if [[ "$USER_LANG" == en* ]]; then
+  L_ERR_PY="Python 3 is required."
+  L_INFO_PY_MAC="Install it: xcode-select --install or brew install python3"
+  L_INFO_PY_TAILS="On Tails: Applications → Utilities → Terminal (Python 3 is included)."
+  L_INFO_PY_LINUX="Install it: sudo apt install python3 python3-venv python3-pip"
+  L_INFO_ENV="First use: preparing the environment (1 to 2 min)…"
+  L_INFO_PIP="The 'venv' module is incomplete (no ensurepip). Installing pip into the environment (no sudo needed)…"
+  L_INFO_VENV="Creating the environment without pip…"
+  L_OK_ENV="Environment ready."
+  L_INFO_PIP_SUDO="Attempting to install the missing python3-venv package (requires sudo)…"
+  L_ERR_ENV="Unable to prepare the Python environment."
+  L_HINT_TAILS="On Tails, no administration password is required: the tool installs pip itself, without sudo. If sudo is preferred, set an administration password on the Welcome Screen and run: sudo apt install python3-venv"
+  L_HINT_APT="Install the missing package, then rerun: sudo apt install python3-venv"
+  L_HINT_MAC="Reinstall Python from https://python.org (the venv module is included)."
+elif [[ "$USER_LANG" == it* ]]; then
+  L_ERR_PY="Python 3 è richiesto."
+  L_INFO_PY_MAC="Installalo: xcode-select --install oppure brew install python3"
+  L_INFO_PY_TAILS="Su Tails: Applicazioni → Utilità → Terminale (Python 3 è incluso)."
+  L_INFO_PY_LINUX="Installalo: sudo apt install python3 python3-venv python3-pip"
+  L_INFO_ENV="Primo utilizzo: preparazione dell'ambiente (1-2 min)…"
+  L_INFO_PIP="Modulo 'venv' incompleto (senza ensurepip). Installazione di pip nell'ambiente (nessun sudo richiesto)…"
+  L_INFO_VENV="Creazione dell'ambiente senza pip…"
+  L_OK_ENV="Ambiente pronto."
+  L_INFO_PIP_SUDO="Tentativo di installazione del pacchetto mancante python3-venv (richiede sudo)…"
+  L_ERR_ENV="Impossibile preparare l'ambiente Python."
+  L_HINT_TAILS="Su Tails non serve alcuna password di amministrazione: lo strumento installa pip da solo, senza sudo. Se preferisci sudo, imposta una password di amministrazione nella schermata di benvenuto ed esegui: sudo apt install python3-venv"
+  L_HINT_APT="Installa il pacchetto mancante e riesegui: sudo apt install python3-venv"
+  L_HINT_MAC="Reinstalla Python da https://python.org (il modulo venv è incluso)."
+else
+  L_ERR_PY="Python 3 est requis."
+  L_INFO_PY_MAC="Installez-le : xcode-select --install  ou  brew install python3"
+  L_INFO_PY_TAILS="Sur Tails : Applications → Utilitaires → Terminal (Python 3 est inclus)."
+  L_INFO_PY_LINUX="Installez-le : sudo apt install python3 python3-venv python3-pip"
+  L_INFO_ENV="Première utilisation : préparation de l'environnement (1 à 2 min)…"
+  L_INFO_PIP="Module « venv » incomplet (pas d'ensurepip). Installation de pip dans l'environnement (sans sudo)…"
+  L_INFO_VENV="Création de l'environnement sans pip…"
+  L_OK_ENV="Environnement prêt."
+  L_INFO_PIP_SUDO="Tentative d'installation du paquet manquant python3-venv (nécessite sudo)…"
+  L_ERR_ENV="Impossible de préparer l'environnement Python."
+  L_HINT_TAILS="Sous Tails, aucun mot de passe d'administration n'est requis : l'outil installe pip lui-même, sans sudo. Si vous préférez sudo, définissez un mot de passe d'administration à l'écran de bienvenue puis tapez : sudo apt install python3-venv"
+  L_HINT_APT="Installez le paquet manquant puis relancez : sudo apt install python3-venv"
+  L_HINT_MAC="Réinstallez Python depuis https://python.org (le module venv est inclus)."
+fi
+
 detect_platform() {
   if [ -f /etc/amnesia ] || [ -n "${TAILS_VERSION:-}" ]; then
     echo "tails"
@@ -41,29 +87,86 @@ venv_dir() {
   fi
 }
 
+bootstrap_pip() {
+  local VENV="$1"
+  local GET_PIP="${VENV}/get-pip.py"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://bootstrap.pypa.io/get-pip.py -o "$GET_PIP" 2>/dev/null \
+      || wget -qO "$GET_PIP" https://bootstrap.pypa.io/get-pip.py 2>/dev/null \
+      || return 1
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$GET_PIP" https://bootstrap.pypa.io/get-pip.py 2>/dev/null || return 1
+  else
+    return 1
+  fi
+  "$VENV/bin/python3" "$GET_PIP" -q 2>/dev/null
+  rm -f "$GET_PIP"
+  command -v "$VENV/bin/python3" >/dev/null 2>&1 && "$VENV/bin/python3" -m pip --version >/dev/null 2>&1
+}
+
+install_venv_package() {
+  case "$(detect_platform)" in
+    tails|linux)
+      if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+        info "$L_INFO_PIP_SUDO"
+        if sudo apt-get install -y python3-venv >/dev/null 2>&1; then
+          return 0
+        fi
+      fi
+      ;;
+  esac
+  return 1
+}
+
 ensure_python() {
   if ! command -v python3 >/dev/null 2>&1; then
-    err "Python 3 est requis."
+    err "$L_ERR_PY"
     case "$(detect_platform)" in
-      macos)  info "Installez-le : xcode-select --install  ou  brew install python3" ;;
-      tails)  info "Sur Tails : Applications → Utilitaires → Terminal (Python 3 est inclus)." ;;
-      *)      info "Installez-le : sudo apt install python3 python3-venv python3-pip" ;;
+      macos)  info "$L_INFO_PY_MAC" ;;
+      tails)  info "$L_INFO_PY_TAILS" ;;
+      *)      info "$L_INFO_PY_LINUX" ;;
     esac
     exit 1
   fi
+}
+
+fatal_venv() {
+  err "$L_ERR_ENV"
+  case "$(detect_platform)" in
+    tails)  info "$L_HINT_TAILS" ;;
+    macos)  info "$L_HINT_MAC" ;;
+    *)      info "$L_HINT_APT" ;;
+  esac
+  exit 1
 }
 
 ensure_venv() {
   ensure_python
   local VENV
   VENV="$(venv_dir)"
-  if [ ! -x "$VENV/bin/python3" ]; then
-    info "Première utilisation : préparation de l'environnement (1 à 2 min)…"
-    python3 -m venv "$VENV"
-    "$VENV/bin/pip" install -q --upgrade pip
-    "$VENV/bin/pip" install -q -r "$REPO_ROOT/requirements.txt"
-    ok "Environnement prêt."
+  if [ -x "$VENV/bin/python3" ] && "$VENV/bin/python3" -m pip --version >/dev/null 2>&1; then
+    export NOBLOGS_VENV="$VENV"
+    return 0
   fi
+
+  info "$L_INFO_ENV"
+  rm -rf "$VENV"
+  if python3 -c "import ensurepip" >/dev/null 2>&1; then
+    if ! python3 -m venv "$VENV" >/dev/null 2>&1; then
+      { install_venv_package && python3 -m venv "$VENV" >/dev/null 2>&1; } || fatal_venv
+    fi
+  else
+    info "$L_INFO_VENV"
+    if python3 -m venv --without-pip "$VENV" >/dev/null 2>&1 && bootstrap_pip "$VENV"; then
+      info "$L_INFO_PIP"
+    else
+      { install_venv_package && python3 -m venv "$VENV" >/dev/null 2>&1; } || fatal_venv
+    fi
+  fi
+
+  "$VENV/bin/python3" -m pip install -q --upgrade pip
+  "$VENV/bin/python3" -m pip install -q -r "$REPO_ROOT/requirements.txt"
+  ok "$L_OK_ENV"
   export NOBLOGS_VENV="$VENV"
 }
 
