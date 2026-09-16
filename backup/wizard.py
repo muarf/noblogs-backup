@@ -362,6 +362,107 @@ def publish_local(zip_path: Path) -> int:
     return 0
 
 
+def _hugo_port() -> int:
+    try:
+        return int(os.getenv("NOBLOGS_HUGO_PORT", "8092"))
+    except ValueError:
+        return 8092
+
+
+def publish_hugo(zip_path: Path) -> int:
+    """Republication en site Hugo statique (100 % hors-ligne)."""
+    from .hugo import build_site, download_hugo, find_hugo, hugo_docker_build, run_hugo_build
+
+    meta = _zip_metadata(zip_path)
+    slug = meta.get("slug") or zip_path.name.split("-noblogs-backup")[0]
+    site = HUGO_ROOT / slug
+    port = _hugo_port()
+    base_url = f"http://localhost:{port}"
+
+    if site.exists() and (site / "config.toml").exists():
+        print(f"\n  Un dépôt Hugo existe déjà : {site}")
+        print(f"  Site : {base_url}\n")
+        print("  [R]  Reconstruire le dépôt (ré-extraire le ZIP & re-générer)")
+        print("  [O]  Ouvrir le site tel quel (rien de plus)")
+        print("  [a]  Annuler")
+        print("")
+        choice = _read("  Votre choix [R/o/a] : ").strip().lower()
+        if choice.startswith("o"):
+            print(f"\n  Site : {base_url}")
+            print(f"  Dossier : {site}\n")
+            return _serve_hugo(site, port)
+        if not choice.startswith("r"):
+            print("  Annulé.")
+            return 0
+        print("\n  Reconstruction du dépôt…")
+        shutil.rmtree(site, ignore_errors=True)
+        site.mkdir(parents=True, exist_ok=True)
+
+    built: dict = {}
+
+    def _build(extracted: str) -> None:
+        summary = build_site(Path(extracted), slug, site, base_url=base_url)
+        if summary.get("error"):
+            built["error"] = summary["error"]
+            print(f"\n  ✗ {summary['error']}")
+            return
+        built["summary"] = summary
+        hugo_bin = find_hugo() or download_hugo(HUGO_BIN_DIR)
+        if hugo_bin:
+            built["ok"] = run_hugo_build(site, hugo_bin)
+        else:
+            print("\n  Binaire hugo absent — essai via Docker…")
+            built["ok"] = hugo_docker_build(site)
+
+    _with_temp_extract(zip_path, _build)
+
+    if built.get("error"):
+        print("    Voyez docs/GUIDE-HUGO.md. Une vieille archive ?")
+        print("    Complétez-la d'abord : python -m backup wizard upgrade <archive.zip>\n")
+        return 1
+    if not built.get("ok"):
+        print("\n  ✗ Build Hugo impossible (ni binaire, ni Docker).")
+        print("    Voyez docs/GUIDE-HUGO.md pour installer hugo.\n")
+        return 1
+
+    summary = built.get("summary") or {}
+    print(f"\n  ✓ Dépôt Hugo : {site}")
+    print(f"    {summary.get('posts', '?')} articles, {summary.get('pages', '?')} pages, "
+          f"{summary.get('assets_local', '?')} médias, thème {summary.get('theme') or 'nblogs'}")
+    return _serve_hugo(site, port)
+
+
+def _serve_hugo(site: Path, port: int) -> int:
+    """Sert le site construit (public/) jusqu'à Ctrl+C."""
+    public = site / "public"
+    if not (public / "index.html").exists():
+        print("\n  ✗ Aucun index.html dans public/ : build incomplet.\n")
+        return 1
+    print(f"\n  Site : http://localhost:{port}  (Ctrl+C pour arrêter)")
+    print(f"  Dossier : {site}")
+    print(f"  Contenu à publier : {public}\n")
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "http.server", str(port), "--directory", str(public)],
+            cwd=str(public), check=False,
+        )
+    except KeyboardInterrupt:
+        print("\n  Serveur arrêté.")
+    except Exception as e:
+        print(f"\n  ✗ Serveur introuvable : {e}\n")
+        print(f"  Lancez vous-même : python3 -m http.server {port} --directory {public}\n")
+        return 1
+    return 0
+
+
+def publish_both(zip_path: Path) -> int:
+    """Republication double : locale (identique) + site Hugo statique."""
+    r = publish_local(zip_path)
+    if r != 0:
+        return r
+    return publish_hugo(zip_path)
+
+
 def show_local(zip_path: str, extracted: str | None = None) -> None:
     print(_guide("GUIDE-LOCAL.md", extracted))
     if extracted:
